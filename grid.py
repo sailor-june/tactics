@@ -7,13 +7,18 @@ import random
 pygame.init()
 
 # Set up the display
-screen_width, screen_height = 800, 600
+screen_width, screen_height = 800, 800
 screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Combat Map")
 clock = pygame.time.Clock()
 # Define the size of the grid and the size of each cell
 grid_size = 10
-cell_size = 64
+cell_size = 256
+
+# grass=pygame.image.load("grasstile.png").convert_alpha(),
+# forest=pygame.image.load("forest_tile.png").convert_alpha(),
+# mtn=pygame.image.load("mtn_tile.png").convert_alpha()
+# tiles=grass,forest,mtn
 
 
 # Define the colors to use for the grid, the cursor, and the selected entity
@@ -37,6 +42,12 @@ class Entity:
         self.mp = 5
         self.pc = pc
         self.color = WHITE
+        self.def_color=WHITE
+        self.image=None
+        if self.pc:
+            self.image=pygame.image.load("knight.png").convert_alpha()
+        else:
+            self.image=pygame.image.load("satan.png").convert_alpha()
         Entity.all_entities.append(self)
 
     def move(self, dx, dy):
@@ -49,7 +60,9 @@ class Entity:
         font = pygame.font.Font(None, 20)
         text = font.render(self.name, True, self.color)
         text_rect = text.get_rect(center=rect.center)
+        screen.blit(self.image, (self.x*grid.cell_size,self.y*grid.cell_size))
         screen.blit(text, text_rect)
+        
 
 
 class Cursor:
@@ -67,10 +80,40 @@ class Grid:
         self.width = width
         self.height = height
         self.cell_size = cell_size
+        self.cells = [[Grid.Cell(x, y,) for y in range(height)] for x in range(width)]
         self.entities = []
         self.cursor = Cursor(0, 0)
         self.selected_entity = None
+        self.highlighted_cells=[]
+        
+    class Cell:
+        def __init__(self, x, y, entity=None, terrain_cost=1):
+            self.x=x
+            self.y=y
+            self.entity=entity
+            self.terrain_cost= terrain_cost
+            self.color = WHITE
+            self.def_color=WHITE
+            self.terrain_cost = random.choice([1,1,1,2,3])
+            self.image=None
+            if self.terrain_cost ==1:
+                self.def_color=WHITE
+                self.image=pygame.image.load("grasstile.png").convert_alpha()
+            elif self.terrain_cost==2:
+                self.def_color=BLUE
+                self.image=pygame.image.load("forest_tile.png").convert_alpha()
+            elif self.terrain_cost==3:
+                self.def_color=RED
+                self.image=pygame.image.load("mtn_tile.png").convert_alpha()
+            self.color=self.def_color
+        def __str__(self):
+            return f"cell at {self.x},{self.y}, move cost: {self.terrain_cost}"
 
+    def print_cells():
+        for row in grid.cells:
+            for cell in row:
+                print(cell)
+            
     def add_entity(self, entity):
         self.entities.append(entity)
 
@@ -79,20 +122,29 @@ class Grid:
             if entity.x == x and entity.y == y:
                 return entity
         return None
+    def get_move_cost(self,x,y):
+        for row in self.cells:
+            for cell in row:
+                if cell.x ==x and cell.y==y:
+                    return cell.terrain_cost
 
     def set_selected_entity(self, entity):
         self.selected_entity = entity
-
+    def highlight_cell(self, x,y, color):
+        self.cells[x][y].color = color
     def draw(self, surface):
         for x in range(self.width):
             for y in range(self.height):
+                cell = self.cells[x][y]
                 rect = pygame.Rect(
                     x * self.cell_size,
                     y * self.cell_size,
                     self.cell_size,
                     self.cell_size,
                 )
-                pygame.draw.rect(surface, WHITE, rect, 1)
+                color = cell.color
+                screen.blit(cell.image, (x * self.cell_size, y * self.cell_size))
+                pygame.draw.rect(surface, color, rect, 1)
                 entity = self.get_entity_at(x, y)
                 if entity is not None:
                     Entity.draw_entity(entity, surface, rect)
@@ -113,7 +165,7 @@ class Grid:
                 self.cell_size,
             )
             pygame.draw.rect(surface, RED, selected_rect, 3)
-
+    
     def get_neighbors(self, x, y):
         neighbors = []
         if x > 0:
@@ -155,35 +207,107 @@ class Grid:
                 if neighbor not in visited:
                     new_path = list(path)
                     new_path.append(neighbor)
-                    new_dist = dist + 1  # add 1 to the distance for each move
+                    new_dist = dist + grid.get_move_cost(neighbor[0],neighbor[1])  # add 1 to the distance for each move
                     queue.append((neighbor, new_path, new_dist))
 
         return None, None
+    
+    def confirm_action(self, message):
+        font = pygame.font.SysFont(None, 30)
+        text = font.render(message, True, WHITE)
+        text_rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
+        pygame.draw.rect(screen, BLACK, text_rect, border_radius=10)
+        screen.blit(text, text_rect)
+        pygame.display.flip()
+
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_x:
+                        return True
+                    elif event.key == pygame.K_z:
+                        return False
+
+def check_move(grid):
+    new_x, new_y = grid.cursor.x, grid.cursor.y
+    path, dist = grid.bfs(
+        (grid.selected_entity.x, grid.selected_entity.y), (new_x, new_y)
+    )
+    print(path)
+    print (dist)
+    if grid.get_entity_at(new_x, new_y) is None:
+        cost = dist
+        message = "Move %s to (%d, %d)?" % (selected_entity.name, new_x, new_y)
+        if grid.confirm_action(message):
+            if grid.selected_entity.mp >= cost:
+                grid.selected_entity.move(new_x, new_y)
+                grid.selected_entity.mp -= cost
+                if grid.selected_entity.mp == 0:
+                    grid.selected_entity.moved = True
+                    grid.selected_entity.color = RED
+                grid.set_selected_entity(None)
+                unhighlight_cells()
+            else: print("not enough mp!")
+
+def highlight_reachable_cells(character):
+    start = (character.x, character.y)
+    max_cost = character.mp
+    reachable_cells = []
+    
+    for row in grid.cells:
+        for cell in row:
+            if grid.bfs(start,(cell.x,cell.y))[1]<=max_cost:
+                reachable_cells.append(cell)
+                    
+    # Highlight all reachable cells
+    for cell in reachable_cells:
+        cell.color = GREEN
+        grid.highlighted_cells.append(cell)
+
+def unhighlight_cells():
+    for cell in grid.highlighted_cells:
+        cell.color = cell.def_color
+       
+        
+def prompt(options):
+    """Display a prompt with the given options and return the selected option."""
+    selected = 0
+    font = pygame.font.SysFont(None, 30)
+    while True:
+        # Display the prompt and highlight the selected option
+        for i, option in enumerate(options):
+            color = RED if i == selected else WHITE
+            text = font.render(option, True, color)
+            screen.blit(text, (300, 240 + i * 20))
+        pygame.display.update()
+
+        # Wait for user input
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    selected = max(0, selected - 1)
+                elif event.key == pygame.K_DOWN:
+                    selected = min(len(options) - 1, selected + 1)
+                elif event.key == pygame.K_x:
+                    return options[selected]
+                elif event.key == pygame.K_z:
+                    return None
 
 
 # Define a list of entities on the grid
 
-grid = Grid(10, 10, 48)
+grid = Grid(10, 10, 64)
 grid.add_entity(Entity("Player 1", 5, 0, True))
 grid.add_entity(Entity("Player 2", 5, 2, True))
 grid.add_entity(Entity("Enemy 1", 0, 9, False))
 grid.add_entity(Entity("Enemy 2", 9, 9, False))
 
-# Define a function to draw the grid
-
-
-# Define a function to draw an entity
-
-
-# Define a function to draw the cursor
-# def draw_cursor():
-#     rect = pygame.Rect(cursor_x * cell_size, cursor_y * cell_size, cell_size, cell_size)
-#     pygame.draw.rect(screen, cursor_color, rect, 1)
 
 
 running = True
 timer=0
 enemy_phase=False
+
 while running:
     clock.tick(60)
     timer+=1
@@ -194,74 +318,79 @@ while running:
     grid.draw(screen)
 
     # Handle player's turn
-    if any([e.mp > 0 for e in grid.entities if e.pc == True]):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT:
-                    grid.cursor.move(-1, 0)
-                elif event.key == pygame.K_RIGHT:
-                    grid.cursor.move(1, 0)
-                elif event.key == pygame.K_UP:
-                    grid.cursor.move(0, -1)
-                elif event.key == pygame.K_DOWN:
-                    grid.cursor.move(0, 1)
-                elif event.key == pygame.K_x:
-                    if grid.get_entity_at(grid.cursor.x, grid.cursor.y) is None:
-                        if grid.selected_entity:
-                            new_x, new_y = grid.cursor.x, grid.cursor.y
-                            path, dist = grid.bfs(
-                                (selected_entity.x, selected_entity.y), (new_x, new_y)
-                            )
-                            if grid.get_entity_at(new_x, new_y) is None:
-                                cost = dist
-                                if selected_entity.mp >= cost:
-                                    selected_entity.move(new_x, new_y)
-                                    selected_entity.mp -= cost
-                                    if selected_entity.mp == 0:
-                                        selected_entity.moved = True
-                                        selected_entity.color = RED
-                                    grid.set_selected_entity(None)
+    for entity in [e for e in grid.entities if e.pc]:
+        if not entity.moved:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        grid.cursor.move(-1, 0)
+                    elif event.key == pygame.K_RIGHT:
+                        grid.cursor.move(1, 0)
+                    elif event.key == pygame.K_UP:
+                        grid.cursor.move(0, -1)
+                    elif event.key == pygame.K_DOWN:
+                        grid.cursor.move(0, 1)
+                    elif event.key == pygame.K_x:
+                        if grid.get_entity_at(grid.cursor.x, grid.cursor.y) is None:
+                            if grid.selected_entity:
+                                
+                                check_move(grid)
 
-                            else:
-                                print("not enough movement points!")
+                            
 
-                    else:
-                        if not grid.selected_entity:
-                            spot = grid.get_entity_at(grid.cursor.x, grid.cursor.y)
-                            if not spot.pc:
-                                print("Cannot select enemy units!")
-                                continue
-                            if spot.moved == False:
-                                selected_entity = grid.get_entity_at(
-                                    grid.cursor.x, grid.cursor.y
-                                )
-                                grid.set_selected_entity(selected_entity)
-                                continue
-                            else:
-                                print("Unit has already moved this turn.")
                         else:
-                            print("Can't move to a square that is already occupied!")
-                elif event.key == pygame.K_z and grid.selected_entity:
-                    grid.set_selected_entity(None)
-    
-    else:
-        enemy_phase=True
-        tomove = [e for e in grid.entities if e.pc == False and e.moved == False]
-        paths={}
-        for e in tomove.copy():
-            target = random.choice([e for e in grid.entities if e.pc == True])
-            path = a_star((e.x, e.y), (target.x, target.y), grid)
-            paths[e]=path
-    if timer >60 and enemy_phase==True:
+                            spot = grid.get_entity_at(grid.cursor.x, grid.cursor.y)
+                            if not spot:
+                                # no entity at the selected spot
+                                pass
+                            elif spot.pc:
+                                # player unit selected
+                                if spot.moved:
+                                    print("Unit has already moved this turn.")
+                                else:
+                                    selected_entity = spot
+                                    grid.set_selected_entity(selected_entity)
+                                    highlight_reachable_cells(selected_entity)
+                                    prompt_options = ["Move", "Wait Here"]
+                                    selected_option = prompt(prompt_options)
+                                    if selected_option == "Wait Here":
+                                        selected_entity.mp=0
+                                        selected_entity.moved=True
+                                        grid.selected_entity.color = RED
+                                        grid.selected_entity=None
+                                        unhighlight_cells()
+                                    else:
+                                        check_move(grid)
+                            else:
+                                # enemy unit selected
+                                print("Cannot select enemy units!")
+
+                    elif event.key == pygame.K_z and grid.selected_entity:
+                        grid.set_selected_entity(None)
+                        unhighlight_cells()
+    player_finished=all(entity.moved for entity in grid.entities if entity.pc)
+    if player_finished:
+            enemy_phase=True
+            tomove = [e for e in grid.entities if e.pc == False and e.moved == False]
+            paths={}
+            for e in tomove.copy():
+                e.color=RED
+                target = random.choice([e for e in grid.entities if e.pc == True])
+                path = a_star((e.x, e.y), (target.x, target.y), grid)
+                paths[e]=path
+    if timer >50 and enemy_phase==True:
         timer=0
         for e in tomove:
-            e.move(paths[e][0][0],paths[e][0][1])
-            e.mp-=1
-
+            step=(paths[e][0][0],paths[e][0][1])
+            if e.mp>=grid.get_move_cost(step[0],step[1]):
+                e.move(step[0],step[1])
+                e.mp-=grid.get_move_cost(step[0],step[1])
+            else: e.mp=0
             if e.mp==0:
                 e.moved=True
+                e.color=e.def_color
         
     #check if all units have moved
     all_moved = True
@@ -275,8 +404,9 @@ while running:
             entity.mp = 5
             entity.moved = False
             entity.color = WHITE
-            enemy_phase=False
-        print("Next turn!")
+            enemy_phase = False
+        print("Next turn!")        
+        
 
     pygame.display.update()
 pygame.quit()
