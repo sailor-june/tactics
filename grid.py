@@ -13,8 +13,9 @@ pygame.display.set_caption("Combat Map")
 clock = pygame.time.Clock()
 # Define the size of the grid and the size of each cell
 grid_size = 10
-cell_size = 256
-
+cell_size = 64
+overlay_surface = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+overlay_surface.fill((RED[0], RED[1], RED[2], 75))
 # grass=pygame.image.load("grasstile.png").convert_alpha(),
 # forest=pygame.image.load("forest_tile.png").convert_alpha(),
 # mtn=pygame.image.load("mtn_tile.png").convert_alpha()
@@ -61,7 +62,7 @@ class Entity:
         text = font.render(self.name, True, self.color)
         text_rect = text.get_rect(center=rect.center)
         screen.blit(self.image, (self.x*grid.cell_size,self.y*grid.cell_size))
-        screen.blit(text, text_rect)
+        screen.blit(text, (self.x*grid.cell_size,self.y*grid.cell_size + grid.cell_size * 0.66))
         
 
 
@@ -98,13 +99,13 @@ class Grid:
             self.image=None
             if self.terrain_cost ==1:
                 self.def_color=WHITE
-                self.image=pygame.image.load("grasstile.png").convert_alpha()
+                self.image=pygame.image.load(random.choice(["grasstile.png","grasstile1.png"])).convert_alpha()
             elif self.terrain_cost==2:
                 self.def_color=BLUE
-                self.image=pygame.image.load("forest_tile.png").convert_alpha()
+                self.image=pygame.image.load(random.choice(["forest_tile.png","forest_tile1.png"])).convert_alpha()
             elif self.terrain_cost==3:
                 self.def_color=RED
-                self.image=pygame.image.load("mtn_tile.png").convert_alpha()
+                self.image=pygame.image.load(random.choice(["mtn_tile.png","mtn_tile1.png"])).convert_alpha()
             self.color=self.def_color
         def __str__(self):
             return f"cell at {self.x},{self.y}, move cost: {self.terrain_cost}"
@@ -258,15 +259,13 @@ def highlight_reachable_cells(character):
         for cell in row:
             if grid.bfs(start,(cell.x,cell.y))[1]<=max_cost:
                 reachable_cells.append(cell)
-                    
+        
     # Highlight all reachable cells
     for cell in reachable_cells:
-        cell.color = GREEN
         grid.highlighted_cells.append(cell)
 
 def unhighlight_cells():
-    for cell in grid.highlighted_cells:
-        cell.color = cell.def_color
+    grid.highlighted_cells=[]
        
         
 def prompt(options):
@@ -316,6 +315,10 @@ while running:
     
     # Draw the grid, the entities, and the cursor
     grid.draw(screen)
+    overlay = pygame.Surface((grid.cell_size, grid.cell_size), pygame.SRCALPHA)
+    overlay.fill((RED[0], RED[1], RED[2], 75))
+    for cell in grid.highlighted_cells:
+        screen.blit(overlay, (cell.x * grid.cell_size, cell.y * grid.cell_size))
 
     # Handle player's turn
     for entity in [e for e in grid.entities if e.pc]:
@@ -341,31 +344,33 @@ while running:
                             
 
                         else:
-                            spot = grid.get_entity_at(grid.cursor.x, grid.cursor.y)
-                            if not spot:
-                                # no entity at the selected spot
-                                pass
-                            elif spot.pc:
-                                # player unit selected
-                                if spot.moved:
-                                    print("Unit has already moved this turn.")
-                                else:
-                                    selected_entity = spot
-                                    grid.set_selected_entity(selected_entity)
-                                    highlight_reachable_cells(selected_entity)
-                                    prompt_options = ["Move", "Wait Here"]
-                                    selected_option = prompt(prompt_options)
-                                    if selected_option == "Wait Here":
-                                        selected_entity.mp=0
-                                        selected_entity.moved=True
-                                        grid.selected_entity.color = RED
-                                        grid.selected_entity=None
-                                        unhighlight_cells()
+                            if not grid.selected_entity:
+                                spot = grid.get_entity_at(grid.cursor.x, grid.cursor.y)
+                                if not spot:
+                                    # no entity at the selected spot
+                                    pass
+                                elif spot.pc:
+                                    # player unit selected
+                                    if spot.moved:
+                                        print("Unit has already moved this turn.")
                                     else:
-                                        check_move(grid)
-                            else:
-                                # enemy unit selected
-                                print("Cannot select enemy units!")
+                                        selected_entity = spot
+                                        grid.set_selected_entity(selected_entity)
+                                        # highlight_reachable_cells(selected_entity)
+                                        prompt_options = ["Move", "Wait Here"]
+                                        selected_option = prompt(prompt_options)
+                                        if selected_option == "Wait Here":
+                                            selected_entity.mp=0
+                                            selected_entity.moved=True
+                                            grid.selected_entity.color = RED
+                                            grid.selected_entity=None
+                                            unhighlight_cells()
+                                        else:
+                                            highlight_reachable_cells(selected_entity)
+                                            check_move(grid)
+                                else:
+                                    # enemy unit selected
+                                    print("Cannot select enemy units!")
 
                     elif event.key == pygame.K_z and grid.selected_entity:
                         grid.set_selected_entity(None)
