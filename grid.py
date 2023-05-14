@@ -40,6 +40,10 @@ class Entity:
         self.moved = False
         self.x = x
         self.y = y
+        self.strength= 5
+        self.defense= 0
+        self.hp=20
+        self.alive=True
         self.mp = 5
         self.pc = pc
         self.color = WHITE
@@ -50,6 +54,24 @@ class Entity:
         else:
             self.image=pygame.image.load("satan.png").convert_alpha()
         Entity.all_entities.append(self)
+    def attack(self, enemy):
+        """
+        Initiates an attack against the given enemy character.
+        """
+        damage = self.strength - enemy.defense
+        if damage > 0:
+            enemy.hp -= damage
+            print(f"{self.name} attacks {enemy.name} for {damage} damage!")
+            if enemy.hp <= 0:
+                print(f"{enemy.name} is defeated!")
+                grid.get_cell(enemy.x,enemy.y).entity=None
+                pygame.display.update()
+                Entity.all_entities.remove(enemy)
+                grid.entities.remove(enemy)
+                enemy.alive = False
+                
+        else:
+            print(f"{self.name}'s attack is ineffective against {enemy.name}!")
 
     def move(self, dx, dy):
         self.x = dx
@@ -99,7 +121,7 @@ class Grid:
             self.image=None
             if self.terrain_cost ==1:
                 self.def_color=WHITE
-                self.image=pygame.image.load(random.choice(["grasstile.png","grasstile1.png"])).convert_alpha()
+                self.image=pygame.image.load(random.choice(["grasstile.png","grasstile1.png","city_tile.png"])).convert_alpha()
             elif self.terrain_cost==2:
                 self.def_color=BLUE
                 self.image=pygame.image.load(random.choice(["forest_tile.png","forest_tile1.png"])).convert_alpha()
@@ -110,11 +132,16 @@ class Grid:
         def __str__(self):
             return f"cell at {self.x},{self.y}, move cost: {self.terrain_cost}"
 
-    def print_cells():
-        for row in grid.cells:
+    def print_cells(self):
+        for row in self.cells:
             for cell in row:
                 print(cell)
-            
+    def get_cell(self, x, y):
+        for row in self.cells:
+            for cell in row:
+                if cell.x ==x and cell.y == y:
+                    return cell
+
     def add_entity(self, entity):
         self.entities.append(entity)
 
@@ -243,13 +270,48 @@ def check_move(grid):
             if grid.selected_entity.mp >= cost:
                 grid.selected_entity.move(new_x, new_y)
                 grid.selected_entity.mp -= cost
+                unhighlight_cells()
+                
                 if grid.selected_entity.mp == 0:
                     grid.selected_entity.moved = True
                     grid.selected_entity.color = RED
+                                
                 grid.set_selected_entity(None)
-                unhighlight_cells()
             else: print("not enough mp!")
+def attack_if_possible(character):
+        # Get neighboring cells
+        neighbors = grid.get_neighbors(character.x, character.y)
+        enemy_entities = []
+        
+        # Find all enemy entities in neighboring cells
+        for neighbor in neighbors:
+            entity = grid.get_entity_at(*neighbor)
+            if entity is not None and not entity.pc:
+                enemy_entities.append(entity)
+        
+        # If there are no enemy entities, return
+        if not enemy_entities:
+            return
+        
+        # If there is only one enemy entity, attack it automatically
+        if len(enemy_entities) == 1:
+            entity = enemy_entities[0]
+            attack_prompt ="%s attack (%s)?" % (character.name, entity.name)
 
+
+            result = prompt(attack_prompt, ["Attack", "Cancel"])
+            if result == "Attack":
+                character.attack(entity)
+            return
+        
+        # If there are multiple enemy entities, present a list to choose from
+        enemy_names = [entity.name for entity in enemy_entities]
+        attack_prompt = "Choose an enemy to attack:"
+        result = prompt(attack_prompt, enemy_names + ["Cancel"])
+        if result != "Cancel":
+            index = enemy_names.index(result)
+            entity = enemy_entities[index]
+            character.attack(entity)
 def highlight_reachable_cells(character):
     start = (character.x, character.y)
     max_cost = character.mp
@@ -267,13 +329,18 @@ def highlight_reachable_cells(character):
 def unhighlight_cells():
     grid.highlighted_cells=[]
        
-        
-def prompt(options):
+def prompt(message, options):
     """Display a prompt with the given options and return the selected option."""
     selected = 0
     font = pygame.font.SysFont(None, 30)
+    
+    
     while True:
-        # Display the prompt and highlight the selected option
+        # Display the prompt message
+        text = font.render(message, True, WHITE)
+        screen.blit(text, (300, 200))
+
+        # Display the prompt options and highlight the selected option
         for i, option in enumerate(options):
             color = RED if i == selected else WHITE
             text = font.render(option, True, color)
@@ -291,6 +358,30 @@ def prompt(options):
                     return options[selected]
                 elif event.key == pygame.K_z:
                     return None
+      
+# def prompt(options):
+#     """Display a prompt with the given options and return the selected option."""
+#     selected = 0
+#     font = pygame.font.SysFont(None, 30)
+#     while True:
+#         # Display the prompt and highlight the selected option
+#         for i, option in enumerate(options):
+#             color = RED if i == selected else WHITE
+#             text = font.render(option, True, color)
+#             screen.blit(text, (300, 240 + i * 20))
+#         pygame.display.update()
+
+#         # Wait for user input
+#         for event in pygame.event.get():
+#             if event.type == pygame.KEYDOWN:
+#                 if event.key == pygame.K_UP:
+#                     selected = max(0, selected - 1)
+#                 elif event.key == pygame.K_DOWN:
+#                     selected = min(len(options) - 1, selected + 1)
+#                 elif event.key == pygame.K_x:
+#                     return options[selected]
+#                 elif event.key == pygame.K_z:
+#                     return None
 
 
 # Define a list of entities on the grid
@@ -338,9 +429,9 @@ while running:
                     elif event.key == pygame.K_x:
                         if grid.get_entity_at(grid.cursor.x, grid.cursor.y) is None:
                             if grid.selected_entity:
-                                
+                                e= grid.selected_entity
                                 check_move(grid)
-
+                                attack_if_possible(e)
                             
 
                         else:
@@ -358,7 +449,7 @@ while running:
                                         grid.set_selected_entity(selected_entity)
                                         # highlight_reachable_cells(selected_entity)
                                         prompt_options = ["Move", "Wait Here"]
-                                        selected_option = prompt(prompt_options)
+                                        selected_option = prompt(f"{selected_entity.name}",prompt_options,)
                                         if selected_option == "Wait Here":
                                             selected_entity.mp=0
                                             selected_entity.moved=True
@@ -367,7 +458,9 @@ while running:
                                             unhighlight_cells()
                                         else:
                                             highlight_reachable_cells(selected_entity)
-                                            check_move(grid)
+                                            
+                                            
+
                                 else:
                                     # enemy unit selected
                                     print("Cannot select enemy units!")
@@ -389,6 +482,13 @@ while running:
         timer=0
         for e in tomove:
             step=(paths[e][0][0],paths[e][0][1])
+            if grid.get_entity_at(*step):
+                t = grid.get_entity_at(*step)
+                if t.pc:
+                    e.attack(t)
+                    e.mp=0
+                    e.moved=True
+                break
             if e.mp>=grid.get_move_cost(step[0],step[1]):
                 e.move(step[0],step[1])
                 e.mp-=grid.get_move_cost(step[0],step[1])
