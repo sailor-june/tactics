@@ -121,7 +121,7 @@ class Grid:
             self.image=None
             if self.terrain_cost ==1:
                 self.def_color=WHITE
-                self.image=pygame.image.load(random.choice(["grasstile.png","grasstile1.png","city_tile.png"])).convert_alpha()
+                self.image=pygame.image.load(random.choice(["grasstile.png","grasstile1.png", "grasstile.png"])).convert_alpha()
             elif self.terrain_cost==2:
                 self.def_color=BLUE
                 self.image=pygame.image.load(random.choice(["forest_tile.png","forest_tile1.png"])).convert_alpha()
@@ -159,7 +159,7 @@ class Grid:
     def set_selected_entity(self, entity):
         self.selected_entity = entity
     def highlight_cell(self, x,y, color):
-        self.cells[x][y].color = color
+        grid.highlighted_cells.append(grid.get_cell(x,y))
     def draw(self, surface):
         for x in range(self.width):
             for y in range(self.height):
@@ -245,6 +245,7 @@ class Grid:
         text = font.render(message, True, WHITE)
         text_rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
         pygame.draw.rect(screen, BLACK, text_rect, border_radius=10)
+        draw_overlay()
         screen.blit(text, text_rect)
         pygame.display.flip()
 
@@ -256,62 +257,152 @@ class Grid:
                     elif event.key == pygame.K_z:
                         return False
 
+
+def confirm_move(grid, path):
+    for move_index in range(1, len(path)):
+        next_cell = grid.get_cell(*path[move_index])
+
+        # Update character position
+        grid.selected_entity.x = next_cell.x
+        grid.selected_entity.y = next_cell.y
+
+        # Decrease movement points
+        grid.selected_entity.mp -= next_cell.terrain_cost
+
+        # Draw the grid and entities
+        grid.draw(screen)
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_x:
+                return  # Exit the function if X is pressed
+
+        # Wait for 1 second
+        pygame.time.wait(1000)
+
+    grid.selected_entity.color = RED
+    grid.selected_entity.mp = 0
+    grid.selected_entity.moved = True
+    grid.selected_entity = None
+
 def check_move(grid):
     new_x, new_y = grid.cursor.x, grid.cursor.y
     path, dist = grid.bfs(
         (grid.selected_entity.x, grid.selected_entity.y), (new_x, new_y)
     )
-    print(path)
-    print (dist)
+
     if grid.get_entity_at(new_x, new_y) is None:
         cost = dist
-        message = "Move %s to (%d, %d)?" % (selected_entity.name, new_x, new_y)
+        unhighlight_cells()
+
+        # Highlight the movement range
+        for cell in path:
+            cell = grid.get_cell(*cell)
+            grid.highlighted_cells.append(cell)
+            
+
+        # Draw the grid and entities
+        grid.draw(screen)
+        pygame.display.flip()
+
+        message = "Move %s to (%d, %d)?" % (grid.selected_entity.name, new_x, new_y)
+
         if grid.confirm_action(message):
             if grid.selected_entity.mp >= cost:
-                grid.selected_entity.move(new_x, new_y)
-                grid.selected_entity.mp -= cost
-                unhighlight_cells()
-                
-                if grid.selected_entity.mp == 0:
-                    grid.selected_entity.moved = True
-                    grid.selected_entity.color = RED
-                                
-                grid.set_selected_entity(None)
-            else: print("not enough mp!")
+                confirm_move(grid, path)
+
+    # Remove the highlighted cells
+    unhighlight_cells()
+
+def highlight_enemy_cells(character):
+    # Get neighboring cells
+    neighbors = grid.get_neighbors(character.x, character.y)
+    enemy_cells = []  # Cells with enemies
+
+    # Find all cells with enemy entities in neighboring cells
+    for neighbor in neighbors:
+        entity = grid.get_entity_at(*neighbor)
+        if entity is not None and not entity.pc:
+            enemy_cells.append(grid.get_cell(entity.x, entity.y))
+
+    # Highlight cells with enemies
+    for cell in enemy_cells:
+        grid.highlighted_cells.append(cell)
+def select_enemy(grid, character):
+        cursor_x = character.x
+        cursor_y = character.y
+        if len(grid.highlighted_cells)==0:
+            highlight_enemy_cells(character)
+        # Use the cursor to select an enemy to attack
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        cursor_x = max(cursor_x - 1, 0)
+                    elif event.key == pygame.K_RIGHT:
+                        cursor_x = min(cursor_x + 1, grid.width - 1)
+                    elif event.key == pygame.K_UP:
+                        cursor_y = max(cursor_y - 1, 0)
+                    elif event.key == pygame.K_DOWN:
+                        cursor_y = min(cursor_y + 1, grid.height - 1)
+                    elif event.key == pygame.K_x:
+                        selected_cell = grid.get_cell(cursor_x, cursor_y)
+                        if selected_cell in grid.highlighted_cells:
+                            entity = grid.get_entity_at(selected_cell.x, selected_cell.y)
+                            character.attack(entity)
+                            grid.highlighted_cells=[]
+                            character.mp = 0
+                            character.color = RED
+                            character.moved = True
+                            grid.selected_entity=None
+                        return
+                    elif event.key == pygame.K_z:
+                        return
+
+            # Update the cursor position
+            grid.cursor.x = cursor_x
+            grid.cursor.y = cursor_y
+
+            # Redraw the grid with the updated cursor position
+            grid.draw(screen)
+            draw_overlay()
+            pygame.display.flip()
 def attack_if_possible(character):
-        # Get neighboring cells
-        neighbors = grid.get_neighbors(character.x, character.y)
-        enemy_entities = []
-        
-        # Find all enemy entities in neighboring cells
-        for neighbor in neighbors:
-            entity = grid.get_entity_at(*neighbor)
-            if entity is not None and not entity.pc:
-                enemy_entities.append(entity)
-        
-        # If there are no enemy entities, return
-        if not enemy_entities:
-            return
-        
-        # If there is only one enemy entity, attack it automatically
-        if len(enemy_entities) == 1:
-            entity = enemy_entities[0]
-            attack_prompt ="%s attack (%s)?" % (character.name, entity.name)
+    # Highlight enemy cells
+    neighbors = grid.get_neighbors(character.x, character.y)
+    enemy_cells = []  # Cells with enemies
+    
+    # Find all cells with enemy entities in neighboring cells
+    for neighbor in neighbors:
+        entity = grid.get_entity_at(*neighbor)
+        if entity is not None and not entity.pc:
+            enemy_cells.append(grid.get_cell(entity.x, entity.y))
+    if not enemy_cells:
+        return
+    highlight_enemy_cells(character)
+
+    # Draw the grid with highlighted cells
+    grid.draw(screen)
+    draw_overlay()
+    pygame.display.flip()
+
+    # Prompt for attack or wait
+    message = "Attack or wait?"
+    options = ["Attack", "Wait"]
+    choice = prompt(message, options)
+
+    if choice == "Attack":
+        # Highlight enemy cells again
+        # highlight_enemy_cells(character)
+        # Draw the grid with highlighted cells
+        grid.draw(screen)
+        # draw_overlay()
+        pygame.display.flip()
+        # Select the enemy to attack
+        select_enemy(grid, character)
+    
 
 
-            result = prompt(attack_prompt, ["Attack", "Cancel"])
-            if result == "Attack":
-                character.attack(entity)
-            return
-        
-        # If there are multiple enemy entities, present a list to choose from
-        enemy_names = [entity.name for entity in enemy_entities]
-        attack_prompt = "Choose an enemy to attack:"
-        result = prompt(attack_prompt, enemy_names + ["Cancel"])
-        if result != "Cancel":
-            index = enemy_names.index(result)
-            entity = enemy_entities[index]
-            character.attack(entity)
 def highlight_reachable_cells(character):
     start = (character.x, character.y)
     max_cost = character.mp
@@ -359,45 +450,33 @@ def prompt(message, options):
                 elif event.key == pygame.K_z:
                     return None
       
-# def prompt(options):
-#     """Display a prompt with the given options and return the selected option."""
-#     selected = 0
-#     font = pygame.font.SysFont(None, 30)
-#     while True:
-#         # Display the prompt and highlight the selected option
-#         for i, option in enumerate(options):
-#             color = RED if i == selected else WHITE
-#             text = font.render(option, True, color)
-#             screen.blit(text, (300, 240 + i * 20))
-#         pygame.display.update()
-
-#         # Wait for user input
-#         for event in pygame.event.get():
-#             if event.type == pygame.KEYDOWN:
-#                 if event.key == pygame.K_UP:
-#                     selected = max(0, selected - 1)
-#                 elif event.key == pygame.K_DOWN:
-#                     selected = min(len(options) - 1, selected + 1)
-#                 elif event.key == pygame.K_x:
-#                     return options[selected]
-#                 elif event.key == pygame.K_z:
-#                     return None
-
 
 # Define a list of entities on the grid
 
 grid = Grid(10, 10, 64)
+for i in range(3):
+
+    city= (random.randint(1,8),random.randint(1,8))
+    for row in grid.cells:
+        for cell in row:
+            if cell.x==city[0] and cell.y==city[1]:
+                cell.image=pygame.image.load("city_tile.png")
+
 grid.add_entity(Entity("Player 1", 5, 0, True))
 grid.add_entity(Entity("Player 2", 5, 2, True))
-grid.add_entity(Entity("Enemy 1", 0, 9, False))
-grid.add_entity(Entity("Enemy 2", 9, 9, False))
+grid.add_entity(Entity("Enemy 1", 5, 6, False))
+grid.add_entity(Entity("Enemy 2", 6, 6, False))
 
 
 
 running = True
 timer=0
 enemy_phase=False
-
+def draw_overlay():
+    overlay = pygame.Surface((grid.cell_size, grid.cell_size), pygame.SRCALPHA)
+    overlay.fill((RED[0], RED[1], RED[2], 75))
+    for cell in grid.highlighted_cells:
+        screen.blit(overlay, (cell.x * grid.cell_size, cell.y * grid.cell_size))
 while running:
     clock.tick(60)
     timer+=1
@@ -406,10 +485,9 @@ while running:
     
     # Draw the grid, the entities, and the cursor
     grid.draw(screen)
-    overlay = pygame.Surface((grid.cell_size, grid.cell_size), pygame.SRCALPHA)
-    overlay.fill((RED[0], RED[1], RED[2], 75))
-    for cell in grid.highlighted_cells:
-        screen.blit(overlay, (cell.x * grid.cell_size, cell.y * grid.cell_size))
+    if grid.highlighted_cells is not None:
+        draw_overlay()
+
 
     # Handle player's turn
     for entity in [e for e in grid.entities if e.pc]:
@@ -449,6 +527,13 @@ while running:
                                         grid.set_selected_entity(selected_entity)
                                         # highlight_reachable_cells(selected_entity)
                                         prompt_options = ["Move", "Wait Here"]
+                                        neighbors = grid.get_neighbors(grid.cursor.x, grid.cursor.y)
+                                        enemy_adjacent = any(
+                                            grid.get_entity_at(neighbor[0], neighbor[1]) and not grid.get_entity_at(neighbor[0], neighbor[1]).pc
+                                            for neighbor in neighbors
+                                        )
+                                        if enemy_adjacent:
+                                            prompt_options.append("Attack")
                                         selected_option = prompt(f"{selected_entity.name}",prompt_options,)
                                         if selected_option == "Wait Here":
                                             selected_entity.mp=0
@@ -456,6 +541,8 @@ while running:
                                             grid.selected_entity.color = RED
                                             grid.selected_entity=None
                                             unhighlight_cells()
+                                        elif selected_option == "Attack":
+                                            select_enemy(grid,selected_entity)
                                         else:
                                             highlight_reachable_cells(selected_entity)
                                             
@@ -489,9 +576,9 @@ while running:
                     e.mp=0
                     e.moved=True
                 break
-            if e.mp>=grid.get_move_cost(step[0],step[1]):
-                e.move(step[0],step[1])
-                e.mp-=grid.get_move_cost(step[0],step[1])
+            if e.mp>=grid.get_move_cost(*step):
+                e.move(*step)
+                e.mp-=grid.get_move_cost(*step)
             else: e.mp=0
             if e.mp==0:
                 e.moved=True
