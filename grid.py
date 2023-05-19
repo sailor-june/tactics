@@ -1,6 +1,6 @@
 import pygame
 from settings import *
-from astar import *
+from pathfinding import *
 import random
 
 # Initialize Pygame
@@ -16,10 +16,7 @@ grid_size = 10
 cell_size = 64
 overlay_surface = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
 overlay_surface.fill((RED[0], RED[1], RED[2], 75))
-# grass=pygame.image.load("grasstile.png").convert_alpha(),
-# forest=pygame.image.load("forest_tile.png").convert_alpha(),
-# mtn=pygame.image.load("mtn_tile.png").convert_alpha()
-# tiles=grass,forest,mtn
+
 
 
 # Define the colors to use for the grid, the cursor, and the selected entity
@@ -216,29 +213,29 @@ class Grid:
         #             neighbors.append((nx, ny))
         # return neighbors
 
-    def bfs(grid, start, goal):
-        queue = [(start, [start], 0)]
-        visited = set()
+    # def bfs(grid, start, goal):
+    #     queue = [(start, [start], 0)]
+    #     visited = set()
 
-        while queue:
-            (node, path, dist) = queue.pop(0)
+    #     while queue:
+    #         (node, path, dist) = queue.pop(0)
 
-            if node == goal:
-                return path, dist
+    #         if node == goal:
+    #             return path, dist
 
-            if node in visited:
-                continue
+    #         if node in visited:
+    #             continue
 
-            visited.add(node)
+    #         visited.add(node)
 
-            for neighbor in grid.get_neighbors(node[0], node[1]):
-                if neighbor not in visited:
-                    new_path = list(path)
-                    new_path.append(neighbor)
-                    new_dist = dist + grid.get_move_cost(neighbor[0],neighbor[1])  # add 1 to the distance for each move
-                    queue.append((neighbor, new_path, new_dist))
+    #         for neighbor in grid.get_neighbors(node[0], node[1]):
+    #             if neighbor not in visited:
+    #                 new_path = list(path)
+    #                 new_path.append(neighbor)
+    #                 new_dist = dist + grid.get_move_cost(neighbor[0],neighbor[1])  # add 1 to the distance for each move
+    #                 queue.append((neighbor, new_path, new_dist))
 
-        return None, None
+    #     return None, None
     
     def confirm_action(self, message):
         font = pygame.font.SysFont(None, 30)
@@ -285,10 +282,10 @@ def confirm_move(grid, path):
     grid.selected_entity.moved = True
     grid.selected_entity = None
 
-def check_move(grid):
+def check_move(grid,):
     new_x, new_y = grid.cursor.x, grid.cursor.y
-    path, dist = grid.bfs(
-        (grid.selected_entity.x, grid.selected_entity.y), (new_x, new_y)
+    path, dist = bfs(grid,
+        (new_x, new_y), grid.selected_entity
     )
 
     if grid.get_entity_at(new_x, new_y) is None:
@@ -403,16 +400,16 @@ def attack_if_possible(character):
     
 
 
-def highlight_reachable_cells(character):
-    start = (character.x, character.y)
+def highlight_reachable_cells(grid, character):
     max_cost = character.mp
     reachable_cells = []
-    
+
     for row in grid.cells:
         for cell in row:
-            if grid.bfs(start,(cell.x,cell.y))[1]<=max_cost:
+            path, dist = bfs(grid, (cell.x, cell.y), character)
+            if dist is not None and dist <= max_cost:
                 reachable_cells.append(cell)
-        
+
     # Highlight all reachable cells
     for cell in reachable_cells:
         grid.highlighted_cells.append(cell)
@@ -544,7 +541,7 @@ while running:
                                         elif selected_option == "Attack":
                                             select_enemy(grid,selected_entity)
                                         else:
-                                            highlight_reachable_cells(selected_entity)
+                                            highlight_reachable_cells(grid,selected_entity)
                                             
                                             
 
@@ -573,6 +570,9 @@ while running:
                 t = grid.get_entity_at(*step)
                 if t.pc:
                     e.attack(t)
+                    e.mp=0
+                    e.moved=True
+                else:
                     e.mp=0
                     e.moved=True
                 break
